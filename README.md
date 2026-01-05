@@ -1,4 +1,4 @@
-# _poscript
+# _postscript
 
 Postscript is a personal journaling application for people who don't journal, but want to.
 
