@@ -2,7 +2,7 @@ use axum::Json;
 use axum::{Router, extract::State, http::StatusCode, routing::post};
 use dotenvy;
 use resend_rs::Resend;
-use resend_rs::types::CreateBroadcastOptions;
+use resend_rs::types::{CreateBroadcastOptions, SendBroadcastOptions};
 use serde::Deserialize;
 use std::sync::Arc;
 
@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // init router, listener
     let app = Router::new()
-        .route("/", post(endpoint))
+        .route("/", post(post_endpoint))
         .with_state(shared_state);
     let listener = tokio::net::TcpListener::bind("0.0.0.0:1129")
         .await
@@ -39,23 +39,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn endpoint(
+async fn post_endpoint(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<EmailRequest>,
 ) -> Result<(), StatusCode> {
-    let resend_segment_id = dotenvy::var("RESEND_PROMPT_SEGMENT").expect("Prompt Segment ID not present!");
+    let resend_segment_id =
+        dotenvy::var("RESEND_PROMPT_SEGMENT").expect("Prompt Segment ID not present!");
     let from = &payload.from;
     let subject = &payload.subject;
 
-    let opts =
-        CreateBroadcastOptions::new(&resend_segment_id, from, subject).with_html("<strong>Yup.</strong>");
+    let create_opts = CreateBroadcastOptions::new(&resend_segment_id, from, subject)
+        .with_html("<strong>Yup.</strong>");
 
-    let _broadcast = match state.resend.broadcasts.create(opts).await {
-        Ok(broadcast) => {
-            println!("CREATED BROADCAST: {:#?}", broadcast);
-            Ok(broadcast)
-        },
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
-    };
+    let broadcast = state
+        .resend
+        .broadcasts
+        .create(create_opts)
+        .await
+        .expect("Could not create Broadcast!");
+    let send_opts = SendBroadcastOptions::new(&broadcast.id).with_scheduled_at("in 1 min");
+    state
+        .resend
+        .broadcasts
+        .send(send_opts)
+        .await
+        .expect("Could not send Broadcast!");
     Ok(())
 }
