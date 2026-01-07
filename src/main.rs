@@ -2,7 +2,7 @@ use axum::Json;
 use axum::{Router, extract::State, http::StatusCode, routing::post};
 use dotenvy;
 use resend_rs::Resend;
-use resend_rs::types::CreateEmailBaseOptions;
+use resend_rs::types::CreateBroadcastOptions;
 use serde::Deserialize;
 use std::sync::Arc;
 
@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = Router::new()
         .route("/", post(endpoint))
         .with_state(shared_state);
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080")
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:1129")
         .await
         .expect("Could not configure Tokio TCP listener!");
     // serve app
@@ -42,13 +42,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn endpoint(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<EmailRequest>,
-) -> Result<String, StatusCode> {
-    let email = CreateEmailBaseOptions::new(&payload.from, payload.to, &payload.subject)
-        .with_html("<strong>It works!</strong>");
+) -> Result<(), StatusCode> {
+    let resend_segment_id = dotenvy::var("RESEND_PROMPT_SEGMENT").expect("Prompt Segment ID not present!");
+    let from = &payload.from;
+    let subject = &payload.subject;
 
-    // access the state via the `State` extractor and handle the error
-    match state.resend.emails.send(email).await {
-        Ok(email) => Ok(email.id.to_string()),
+    let opts =
+        CreateBroadcastOptions::new(&resend_segment_id, from, subject).with_html("<strong>Yup.</strong>");
+
+    let _broadcast = match state.resend.broadcasts.create(opts).await {
+        Ok(broadcast) => {
+            println!("CREATED BROADCAST: {:#?}", broadcast);
+            Ok(broadcast)
+        },
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
-    }
+    };
+    Ok(())
 }
